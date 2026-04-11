@@ -10,7 +10,7 @@ import time
 import gc
 import threading
 import uuid
-import whisper
+from faster_whisper import WhisperModel
 import json
 import multiprocessing
 from proglog import ProgressBarLogger
@@ -134,26 +134,29 @@ def transcribe_audio_with_timestamps(audio_path):
     try:
         logger.info(f"Starting Whisper transcription for: {audio_path}")
         
-        # Load Whisper model
-        model = whisper.load_model("base")
+        # Load faster-whisper model
+        model = WhisperModel("base", device="cpu", compute_type="int8")
         logger.info("Whisper model loaded successfully")
         
         # Transcribe with word-level timestamps
-        result = model.transcribe(audio_path, word_timestamps=True)
-        logger.info(f"Whisper transcription completed")
+        segments, info = model.transcribe(audio_path, word_timestamps=True)
+        logger.info(f"Whisper transcription completed - language: {info.language}")
         
         # Extract word-level timestamps
         words = []
-        for segment in result["segments"]:
-            for word in segment["words"]:
-                words.append({
-                    "text": word["word"],
-                    "start": word["start"],
-                    "end": word["end"]
-                })
+        full_text_parts = []
+        for segment in segments:
+            full_text_parts.append(segment.text)
+            if segment.words:
+                for word in segment.words:
+                    words.append({
+                        "text": word.word.strip(),
+                        "start": word.start,
+                        "end": word.end
+                    })
         
-        # Create full text from timestamps
-        full_text = " ".join([word["text"] for word in words])
+        # Create full text
+        full_text = " ".join(full_text_parts).strip()
         logger.info(f"Transcription successful: {full_text[:100]}...")
         logger.info(f"Generated {len(words)} word timestamps")
         
