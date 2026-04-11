@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Video - Video Caption Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .processing-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        h1 {
+            color: #333;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .progress-container {
+            margin: 2rem 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 1rem;
+            color: #666;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .file-info {
+            background: #f8f9ff;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+        }
+
+        .file-name {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .steps-container {
+            margin-top: 2rem;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .step.active {
+            background: #e7f3ff;
+        }
+
+        .step.completed {
+            background: #d4edda;
+        }
+
+        .step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 1rem;
+            font-size: 0.8rem;
+            color: white;
+        }
+
+        .step.active .step-icon {
+            background: #667eea;
+        }
+
+        .step.completed .step-icon {
+            background: #28a745;
+        }
+
+        .step-text {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+            border: 1px solid #f5c6cb;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+            border: 1px solid #c3e6cb;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.8rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: 500;
+            transition: transform 0.3s ease;
+            margin-top: 1rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .caption-section, .preview-section {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #f8f9ff;
+            border-radius: 10px;
+            border: 1px solid #e7f3ff;
+        }
+
+        .caption-section h3, .preview-section h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .caption-text {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            color: #555;
+            line-height: 1.6;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+        }
+
+        .preview-image {
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .caption-timestamps {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f0f8ff;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .caption-live-status {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #fff8e7;
+            border-radius: 8px;
+            border: 1px solid #ffd700;
+        }
+
+        .live-indicator {
+            color: #ff6b00;
+            font-weight: 600;
+            font-size: 0.9rem;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .caption-current {
+            margin-top: 0.5rem;
+            font-family: 'SF Mono', monospace;
+            font-size: 0.85rem;
+            color: #555;
+            background: white;
+            padding: 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .caption-timestamps h4 {
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .caption-timestamps ul {
+            list-style: none;
+            padding: 0;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .caption-timestamps li {
+            padding: 0.3rem 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 0.9rem;
+            color: #555;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .step-confirmation {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #f8f9ff;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .step-confirmation h4 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+
+        .step-text {
+            flex: 1;
+            color: #333;
+            font-size: 0.9rem;
+        }
+
+        .step-status {
+            color: #666;
+            font-size: 0.8rem;
+            margin-left: 1rem;
+        }
+
+        .step-status.completed {
+            color: #28a745;
+        }
+
+        .render-section {
+            margin-top: 2rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            border: 2px solid #667eea;
+            text-align: center;
+            color: white;
+        }
+
+        .render-content h3 {
+            color: white;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .render-content p {
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 1.5rem;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            background: #f8f9ff;
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="processing-icon">⚙️</div>
+            <h1>Processing Your Video</h1>
+            <p class="subtitle">Adding captions automatically...</p>
+        </div>
+
+        <div class="file-info">
+            <strong>File:</strong> <span class="file-name">{{ filename }}</span>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%">
+                    <span id="progressPercent">0%</span>
+                </div>
+            </div>
+            <div class="progress-text" id="progressText">Starting...</div>
+        </div>
+
+        <div class="steps-container">
+            <div class="step" id="step1">
+                <div class="step-icon">1</div>
+                <div class="step-text">Extracting audio from video</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-icon">2</div>
+                <div class="step-text">Transcribing speech to text</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-icon">3</div>
+                <div class="step-text">Creating captions</div>
+            </div>
+            <div class="step" id="step4">
+                <div class="step-icon">4</div>
+                <div class="step-text">Rendering final video</div>
+            </div>
+        </div>
+
+        <div id="captionSection" class="caption-section hidden">
+            <h3>Extracted Captions:</h3>
+            <div id="captionText" class="caption-text"></div>
+            <div id="captionTimestamps" class="caption-timestamps hidden">
+                <h4>Caption Timeline:</h4>
+                <ul id="timestampsList"></ul>
+            </div>
+            <div id="captionLiveStatus" class="caption-live-status hidden">
+                <div class="live-indicator">● Generating...</div>
+                <div id="captionCurrent" class="caption-current"></div>
+            </div>
+        </div>
+        
+        <div id="previewSection" class="preview-section hidden">
+            <h3>Caption Preview:</h3>
+            <img id="previewImage" class="preview-image" alt="Caption preview">
+        </div>
+        
+        <div id="renderSection" class="render-section hidden">
+            <div class="render-content">
+                <h3>Ready to Render</h3>
+                <p>Your captions have been extracted and synchronized. Click the button below to render the final video with captions.</p>
+                <button id="renderButton" class="btn btn-primary" onclick="startRendering()">
+                    🎬 Render Video with Captions
+                </button>
+            </div>
+        </div>
+        
+        <div id="stepConfirmation" class="step-confirmation hidden">
+            <h4>Processing Steps:</h4>
+            <div class="step-item" id="step1Confirm">
+                <span class="step-number">1</span>
+                <span class="step-text">Extracting audio from video</span>
+                <span class="step-status">⏳ Waiting...</span>
+            </div>
+            <div class="step-item" id="step2Confirm">
+                <span class="step-number">2</span>
+                <span class="step-text">Transcribing speech to text</span>
+                <span class="step-status">⏳ Waiting...</span>
+            </div>
+            <div class="step-item" id="step3Confirm">
+                <span class="step-number">3</span>
+                <span class="step-text">Creating captions</span>
+                <span class="step-status">⏳ Waiting...</span>
+            </div>
+            <div class="step-item" id="step4Confirm">
+                <span class="step-number">4</span>
+                <span class="step-text">Rendering final video</span>
+                <span class="step-status">⏳ Waiting...</span>
+            </div>
+        </div>
+
+        <div id="errorMessage" class="error-message hidden"></div>
+        <div id="successMessage" class="success-message hidden">
+            <strong>🎉 Processing Complete!</strong><br>
+            Your video with captions is ready.
+            <br>
+            <a href="/result/{{ job_id }}" class="btn">View Result</a>
+        </div>
+    </div>
+
+    <script>
+        const jobId = '{{ job_id }}';
+        let progressCheckInterval;
+
+        function updateProgress() {
+            fetch(`/progress/${jobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const progressFill = document.getElementById('progressFill');
+                    const progressPercent = document.getElementById('progressPercent');
+                    const progressText = document.getElementById('progressText');
+                    const errorMessage = document.getElementById('errorMessage');
+                    const successMessage = document.getElementById('successMessage');
+                    const captionSection = document.getElementById('captionSection');
+                    const captionText = document.getElementById('captionText');
+                    const captionTimestamps = document.getElementById('captionTimestamps');
+                    const timestampsList = document.getElementById('timestampsList');
+                    const captionLiveStatus = document.getElementById('captionLiveStatus');
+                    const captionCurrent = document.getElementById('captionCurrent');
+                    const previewSection = document.getElementById('previewSection');
+                    const previewImage = document.getElementById('previewImage');
+
+                    if (data.progress >= 0) {
+                        progressFill.style.width = data.progress + '%';
+                        progressPercent.textContent = data.progress + '%';
+                        progressText.textContent = data.step;
+
+                        // Show captions and timestamps when available
+                        if (data.caption_text && data.progress >= 35) {
+                            captionSection.classList.remove('hidden');
+                            captionText.textContent = data.caption_text;
+                            
+                            // Generate and show timestamps
+                            if (data.caption_timestamps) {
+                                captionTimestamps.classList.remove('hidden');
+                                timestampsList.innerHTML = '';
+                                data.caption_timestamps.forEach((item, index) => {
+                                    const li = document.createElement('li');
+                                    li.innerHTML = `<span>${item.text}</span><span>${item.start.toFixed(2)}s - ${item.end.toFixed(2)}s</span>`;
+                                    timestampsList.appendChild(li);
+                                });
+                            }
+                        }
+
+                        // Show live caption generation status during rendering
+                        if (data.caption_progress && data.status === 'rendering') {
+                            captionLiveStatus.classList.remove('hidden');
+                            captionCurrent.textContent = `Creating caption ${data.caption_progress.current} of ${data.caption_progress.total}: "${data.caption_progress.text}" at ${data.caption_progress.time.toFixed(2)}s`;
+                        } else if (data.status === 'ready_to_render' || data.status === 'completed') {
+                            captionLiveStatus.classList.add('hidden');
+                        }
+
+                        // Show preview when available
+                        if (data.preview_filename && data.progress >= 35) {
+                            previewSection.classList.remove('hidden');
+                            previewImage.src = `/uploads/${data.preview_filename}`;
+                        }
+
+                        // Show render button when ready
+                        if (data.status === 'ready_to_render') {
+                            const renderSection = document.getElementById('renderSection');
+                            renderSection.classList.remove('hidden');
+                            
+                            // Stop progress checking since we're waiting for user action
+                            clearInterval(progressCheckInterval);
+                        }
+
+                        // Update step confirmations
+                        updateStepConfirmations(data.progress);
+
+                        // Update step indicators
+                        updateSteps(data.progress);
+
+                        if (data.progress === 100 && data.status === 'completed') {
+                            clearInterval(progressCheckInterval);
+                            successMessage.classList.remove('hidden');
+                        }
+                    } else {
+                        // Error occurred
+                        clearInterval(progressCheckInterval);
+                        progressText.textContent = 'Error occurred';
+                        errorMessage.textContent = 'Error: ' + (data.error || data.step);
+                        errorMessage.classList.remove('hidden');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking progress:', error);
+                });
+        }
+
+        function startRendering() {
+            const renderButton = document.getElementById('renderButton');
+            renderButton.textContent = '🔄 Starting Render...';
+            renderButton.disabled = true;
+            
+            // Start rendering via AJAX
+            fetch(`/render/${jobId}`)
+                .then(response => {
+                    if (response.ok) {
+                        // Start checking progress again
+                        progressCheckInterval = setInterval(updateProgress, 2000);
+                        updateProgress(); // Immediate update
+                    } else {
+                        throw new Error('Failed to start rendering');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting render:', error);
+                    renderButton.textContent = '❌ Error - Try Again';
+                    renderButton.disabled = false;
+                });
+        }
+
+        function updateStepConfirmations(progress) {
+            const step1Confirm = document.getElementById('step1Confirm');
+            const step2Confirm = document.getElementById('step2Confirm');
+            const step3Confirm = document.getElementById('step3Confirm');
+            const step4Confirm = document.getElementById('step4Confirm');
+
+            // Update step 1 (Audio extraction)
+            if (progress >= 10) {
+                step1Confirm.querySelector('.step-status').textContent = '✅ Completed';
+                step1Confirm.querySelector('.step-status').classList.add('completed');
+            }
+
+            // Update step 2 (Transcription)
+            if (progress >= 30) {
+                step2Confirm.querySelector('.step-status').textContent = '✅ Completed';
+                step2Confirm.querySelector('.step-status').classList.add('completed');
+            }
+
+            // Update step 3 (Caption creation)
+            if (progress >= 60) {
+                step3Confirm.querySelector('.step-status').textContent = '✅ Completed';
+                step3Confirm.querySelector('.step-status').classList.add('completed');
+            }
+
+            // Update step 4 (Video rendering)
+            if (progress >= 80) {
+                step4Confirm.querySelector('.step-status').textContent = '✅ Completed';
+                step4Confirm.querySelector('.step-status').classList.add('completed');
+            }
+        }
+
+        function updateSteps(progress) {
+            const steps = [
+                { id: 'step1', threshold: 20 },
+                { id: 'step2', threshold: 40 },
+                { id: 'step3', threshold: 70 },
+                { id: 'step4', threshold: 90 }
+            ];
+
+            steps.forEach((step, index) => {
+                const element = document.getElementById(step.id);
+                if (progress >= step.threshold) {
+                    element.classList.add('completed');
+                    element.classList.remove('active');
+                } else if (progress >= (index > 0 ? steps[index - 1].threshold : 0)) {
+                    element.classList.add('active');
+                    element.classList.remove('completed');
+                } else {
+                    element.classList.remove('active', 'completed');
+                }
+            });
+        }
+
+        // Start checking progress
+        progressCheckInterval = setInterval(updateProgress, 1000);
+        updateProgress(); // Initial check
+    </script>
+</body>
+</html>
