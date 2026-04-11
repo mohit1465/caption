@@ -1,14 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "chmod +x build.sh && ./build.sh && pip install -r requirements.txt",
   "builds": [
     {
       "src": "app.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb",
-        "runtime": "python3.11"
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -16,10 +11,5 @@
       "src": "/(.*)",
       "dest": "app.py"
     }
-  ],
-  "env": {
-    "PYTHONUNBUFFERED": "1",
-    "FFMPEG_BINARY": "ffmpeg",
-    "IMAGEMAGICK_BINARY": "convert"
-  }
+  ]
 }
