@@ -2,5 +2,9 @@ Flask==2.3.3
 SpeechRecognition==3.10.0
 moviepy==1.0.3
 Werkzeug==2.3.7
+<<<<<<< HEAD
 faster-whisper==0.10.0
+=======
+openai-whisper
+>>>>>>> f16e127981adba4e20a441ecd6cdeb1f2f39620b
 proglog==0.1.10
