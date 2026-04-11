@@ -16,8 +16,8 @@ import multiprocessing
 from proglog import ProgressBarLogger
 import time
 
-# Detect serverless environment
-IS_SERVERLESS = os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') or not os.path.exists('/.dockerenv')
+# Detect serverless environment - check for Vercel/Lambda env vars only
+IS_SERVERLESS = os.environ.get('VERCEL') == '1' or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
 
 # Configure ImageMagick and FFmpeg for MoviePy
 if 'IMAGEMAGICK_BINARY' not in os.environ:
