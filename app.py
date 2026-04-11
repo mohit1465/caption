@@ -16,8 +16,10 @@ import multiprocessing
 from proglog import ProgressBarLogger
 import time
 
-# Configure ImageMagick path for MoviePy
-# On Windows, we specify the full path. On Linux/Cloud, we rely on the PATH or environment variable.
+# Detect serverless environment
+IS_SERVERLESS = os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') or not os.path.exists('/.dockerenv')
+
+# Configure ImageMagick and FFmpeg for MoviePy
 if 'IMAGEMAGICK_BINARY' not in os.environ:
     if os.name == 'nt':  # Windows
         possible_paths = [
@@ -29,7 +31,25 @@ if 'IMAGEMAGICK_BINARY' not in os.environ:
             if os.path.exists(path):
                 os.environ['IMAGEMAGICK_BINARY'] = path
                 break
-    # For Linux, MoviePy usually finds it automatically if installed via apt-get
+    else:
+        # Linux/Serverless - use system ImageMagick
+        os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
+
+# Configure FFmpeg for serverless (Vercel/AWS Lambda)
+if IS_SERVERLESS:
+    # Check for common FFmpeg locations
+    ffmpeg_paths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/ffmpeg/ffmpeg', 'ffmpeg']
+    for path in ffmpeg_paths:
+        if os.path.exists(path) or os.system(f'which {path} > /dev/null 2>&1') == 0:
+            os.environ['FFMPEG_BINARY'] = path if os.path.exists(path) else path
+            break
+    # Update MoviePy config
+    try:
+        from moviepy.config import change_settings
+        change_settings({"FFMPEG_BINARY": os.environ.get('FFMPEG_BINARY', 'ffmpeg')})
+        change_settings({"IMAGEMAGICK_BINARY": os.environ.get('IMAGEMAGICK_BINARY', 'convert')})
+    except:
+        pass
 
 
 app = Flask(__name__)
@@ -47,25 +67,38 @@ logger = logging.getLogger(__name__)
 # Suppress Werkzeug request logs (stops the INFO:werkzeug GET/POST messages)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# Create necessary directories
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'output'
+# Create necessary directories - use /tmp in serverless environments
+if IS_SERVERLESS:
+    UPLOAD_FOLDER = '/tmp/uploads'
+    OUTPUT_FOLDER = '/tmp/output'
+else:
+    UPLOAD_FOLDER = 'uploads'
+    OUTPUT_FOLDER = 'output'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# Global dictionary to track progress
+# Global dictionary to track progress (in-memory only for serverless compatibility)
 progress_tracker = {}
-PROGRESS_FILE = 'progress.json'
+PROGRESS_FILE = '/tmp/progress.json' if IS_SERVERLESS else 'progress.json'
 
 def save_progress():
-    """Progress tracking now in-memory only - no local storage"""
-    pass
+    """Progress tracking - in-memory with optional file backup"""
+    if not IS_SERVERLESS:
+        try:
+            with open(PROGRESS_FILE, 'w') as f:
+                json.dump(progress_tracker, f)
+        except:
+            pass
 
 def load_progress():
-    """Progress tracking now in-memory only - no local storage"""
-    pass
-
-# No local storage - progress is in-memory only
+    """Progress tracking - load from file if exists"""
+    if not IS_SERVERLESS and os.path.exists(PROGRESS_FILE):
+        try:
+            with open(PROGRESS_FILE, 'r') as f:
+                global progress_tracker
+                progress_tracker = json.load(f)
+        except:
+            pass
 
 # Resume not supported with in-memory only progress tracking
 
@@ -740,10 +773,25 @@ def upload_file():
         }
         save_progress()
         
-        # Start background processing
-        thread = threading.Thread(target=process_video_background, args=(job_id, video_path, filename))
-        thread.daemon = True
-        thread.start()
+        # For serverless, process synchronously or use async patterns
+        # For local/dev, use threading
+        if IS_SERVERLESS:
+            # In serverless, we need to process immediately since threads don't persist
+            # Note: This may timeout for large videos on Vercel's free tier (10s limit)
+            try:
+                process_video_background(job_id, video_path, filename)
+            except Exception as e:
+                logger.error(f"Serverless processing error: {e}")
+                progress_tracker[job_id] = {
+                    'step': f'Error: {str(e)}', 
+                    'progress': -1,
+                    'status': 'error'
+                }
+        else:
+            # Start background processing for local development
+            thread = threading.Thread(target=process_video_background, args=(job_id, video_path, filename))
+            thread.daemon = True
+            thread.start()
         
         # Return job ID for progress tracking
         return jsonify({'job_id': job_id, 'status': 'processing_started'})
@@ -771,7 +819,7 @@ def render_video(job_id):
         caption_timestamps = updated_captions if updated_captions and isinstance(updated_captions, list) else progress.get('caption_timestamps', [])
 
         
-        # Start rendering in background
+        # Start rendering
         def render_background():
             try:
                 progress_tracker[job_id] = {'step': 'Reusing transcription... Applying visual styles', 'progress': 50}
@@ -818,12 +866,19 @@ def render_video(job_id):
                     'error': str(e)
                 }
         
-        # Start background thread
-        thread = threading.Thread(target=render_background)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({"status": "rendering_started", "message": "Rendering started successfully"})
+        # For serverless, render synchronously; for local, use threading
+        if IS_SERVERLESS:
+            try:
+                render_background()
+                return jsonify({"status": "rendering_completed", "message": "Rendering completed"})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        else:
+            # Start background thread for local development
+            thread = threading.Thread(target=render_background)
+            thread.daemon = True
+            thread.start()
+            return jsonify({"status": "rendering_started", "message": "Rendering started successfully"})
     
     except Exception as e:
         logger.error(f"Error starting render: {str(e)}")
@@ -942,12 +997,19 @@ def re_render_video(job_id):
                     'error': str(e)
                 }
         
-        # Start background thread
-        thread = threading.Thread(target=re_render_background)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({"status": "re-rendering_started", "message": "Re-rendering started with new styles"})
+        # For serverless, re-render synchronously; for local, use threading
+        if IS_SERVERLESS:
+            try:
+                re_render_background()
+                return jsonify({"status": "re-rendering_completed", "message": "Re-rendering completed with new styles"})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        else:
+            # Start background thread for local development
+            thread = threading.Thread(target=re_render_background)
+            thread.daemon = True
+            thread.start()
+            return jsonify({"status": "re-rendering_started", "message": "Re-rendering started with new styles"})
     
     except Exception as e:
         logger.error(f"Error starting re-render: {str(e)}")
@@ -979,6 +1041,12 @@ def safe_remove_file(file_path):
             logger.error(f"Error removing file {file_path}: {str(e)}")
             return False
     return False
+
+# Load any saved progress on startup (local only)
+load_progress()
+
+# Vercel serverless entry point
+app.debug = not IS_SERVERLESS
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
