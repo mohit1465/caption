@@ -270,6 +270,32 @@
             box-shadow: none;
         }
 
+        .reupload-btn {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.08);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 0.5rem;
+            border-radius: 15px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 0.75rem;
+            display: none;
+            text-align: center;
+        }
+
+        .reupload-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .reupload-btn.active {
+            display: block;
+        }
+
         /* Main Content Area - centered and focused */
         .main-content {
             flex: 1;
@@ -1061,9 +1087,36 @@
         }
 
         .color-swatch.active {
-            border-color: #ffffff;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2), 0 0 0 4px rgba(255, 255, 255, 0.1);
+            border-color: #ff9a00;
             transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(255, 154, 0, 0.4);
+        }
+
+        .custom-color-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 2px 8px 2px 2px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            margin-left: 0.25rem;
+        }
+
+        .hex-input {
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.7rem;
+            width: 55px;
+            outline: none;
+            padding: 0;
+            text-transform: uppercase;
+        }
+
+        .hex-input:focus {
+            color: #ffffff;
         }
 
         /* Custom Color Swatch with icon */
@@ -1348,7 +1401,7 @@
         <div class="sidebar">
             <div class="logo">
                 <div class="logo-icon"></div>
-                <span>Dev Caption Studio</span>
+                <span>Skillhubb Caption Studio</span>
             </div>
             
             <div class="upload-section">
@@ -1372,6 +1425,10 @@
                     <button type="submit" class="submit-btn" id="submitBtn">
                         Generate Captions
                     </button>
+                    
+                    <button type="button" class="reupload-btn" id="reuploadBtn">
+                        New Video
+                    </button>
                 </form>
             </div>
         </div>
@@ -1380,7 +1437,7 @@
         <div class="main-content">
             <!-- Header -->
             <div class="header">
-                <div class="header-title">Caption Studio</div>
+                <div class="header-title">Workspace</div>
                 <div class="header-content-right">
                     <div class="status-indicator">
                         <div class="status-dot" id="statusDot"></div>
@@ -1509,8 +1566,11 @@
                                     <div class="color-swatch swatch-cyan" data-value="cyan" title="Cyan"></div>
                                     <div class="color-swatch swatch-lime" data-value="lime" title="Lime"></div>
                                     <div class="color-swatch swatch-red" data-value="red" title="Red"></div>
-                                    <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true"></div>
-                                    <input type="color" class="hidden-picker" id="textColorCustom">
+                                    <div class="custom-color-control">
+                                        <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true" data-value="#ffffff" style="background: #ffffff"></div>
+                                        <input type="text" class="hex-input" value="#FFFFFF" data-target="textColor" maxlength="7">
+                                        <input type="color" class="hidden-picker" id="textColorCustom" value="#ffffff">
+                                    </div>
                                 </div>
                                 <input type="hidden" id="textColor" value="white">
                             </div>
@@ -1523,8 +1583,11 @@
                                     <div class="color-swatch swatch-semi-black active" data-value="semi-black" title="Semi-Black"></div>
                                     <div class="color-swatch swatch-black" data-value="black" title="Black"></div>
                                     <div class="color-swatch swatch-semi-white" data-value="semi-white" title="Semi-White"></div>
-                                    <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true"></div>
-                                    <input type="color" class="hidden-picker" id="backgroundCustom">
+                                    <div class="custom-color-control">
+                                        <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true" data-value="#000000" style="background: #000000"></div>
+                                        <input type="text" class="hex-input" value="#000000" data-target="background" maxlength="7">
+                                        <input type="color" class="hidden-picker" id="backgroundCustom" value="#000000">
+                                    </div>
                                 </div>
                                 <input type="hidden" id="background" value="semi-black">
                             </div>
@@ -1546,8 +1609,11 @@
                                         <div class="color-swatch swatch-black active" data-value="black" title="Black"></div>
                                         <div class="color-swatch swatch-white" data-value="white" title="White"></div>
                                         <div class="color-swatch swatch-yellow" data-value="yellow" title="Yellow"></div>
-                                        <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true"></div>
-                                        <input type="color" class="hidden-picker" id="stockColorCustom">
+                                        <div class="custom-color-control">
+                                            <div class="color-swatch color-swatch-custom" title="Custom Color" data-is-custom="true" data-value="#000000" style="background: #000000"></div>
+                                            <input type="text" class="hex-input" value="#000000" data-target="stockColor" maxlength="7">
+                                            <input type="color" class="hidden-picker" id="stockColorCustom" value="#000000">
+                                        </div>
                                     </div>
                                     <input type="hidden" id="stockColor" value="black">
                                 </div>
@@ -1608,6 +1674,7 @@
         const fileInfo = document.getElementById('fileInfo');
         const fileName = document.getElementById('fileName');
         const submitBtn = document.getElementById('submitBtn');
+        const reuploadBtn = document.getElementById('reuploadBtn');
         const uploadForm = document.getElementById('uploadForm');
         const videoContainer = document.getElementById('videoContainer');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
@@ -1632,6 +1699,12 @@
         const downloadBtn = document.getElementById('downloadBtn');
         const flashMessages = document.getElementById('flashMessages');
         const captionOverlay = document.getElementById('captionOverlay');
+        
+        // Handle reupload
+        reuploadBtn.addEventListener('click', () => {
+            resetUI();
+            fileInput.click();
+        });
 
         // Bypassing confirmation when clicking download
         [downloadBtn, headerDownloadBtn].forEach(btn => {
@@ -1644,12 +1717,60 @@
         // Handle file selection
         fileInput.addEventListener('change', handleFileSelect);
 
+        function clearProjectData() {
+            // Reset global variables
+            currentJobId = null;
+            if (progressCheckInterval) clearInterval(progressCheckInterval);
+            progressCheckInterval = null;
+            storedCaptions = null;
+            captionsInitialized = false;
+            isReRendering = false;
+            isCaptionEditMode = false;
+            
+            // Clear UI elements
+            captionContent.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"></div>
+                    <div class="empty-state-text">No captions yet</div>
+                    <div class="empty-state-subtext">Upload a video to generate captions</div>
+                </div>
+            `;
+            
+            // Reset caption overlay
+            captionOverlay.textContent = '';
+            captionOverlay.classList.remove('active');
+            captionOverlay.className = 'caption-overlay';
+            
+            // Reset progress
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Starting...';
+            progressContainer.classList.remove('active');
+            
+            // Header buttons
+            headerRenderBtn.classList.add('disabled');
+            headerRenderBtn.disabled = true;
+            headerDownloadBtn.classList.add('disabled');
+            headerDownloadBtn.href = '#';
+            
+            // Status
+            statusDot.classList.remove('active');
+            statusText.textContent = 'Ready';
+            
+            // Hide style tab and actions
+            styleTabBtn.style.display = 'none';
+            document.getElementById('captionActions').style.display = 'none';
+            switchTab('captions');
+        }
+
         function handleFileSelect(e) {
+            clearProjectData();
+            
             const file = e.target.files[0];
             if (file) {
                 fileName.textContent = file.name;
                 fileInfo.classList.add('active');
                 submitBtn.classList.add('active');
+                reuploadBtn.classList.remove('active');
                 
                 // Show video preview
                 const url = URL.createObjectURL(file);
@@ -2114,6 +2235,14 @@
         function showCompletion(data) {
             progressContainer.classList.remove('active');
             
+            // Reset submit button state
+            submitBtn.classList.remove('active');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generate Captions';
+            
+            // Show reupload button
+            reuploadBtn.classList.add('active');
+            
             // Show header download button
             headerDownloadBtn.href = `/download/${data.output_filename}`;
             headerDownloadBtn.classList.remove('disabled');
@@ -2149,11 +2278,12 @@
         }
 
         function resetUI() {
+            clearProjectData();
+            
+            submitBtn.classList.remove('active');
+            reuploadBtn.classList.remove('active');
             submitBtn.disabled = false;
             submitBtn.textContent = 'Generate Captions';
-            progressContainer.classList.remove('active');
-            statusDot.classList.remove('active');
-            statusText.textContent = 'Ready';
             
             // Reset video preview
             videoPreview.style.display = 'none';
@@ -2161,15 +2291,6 @@
             videoPreview.src = '';
             videoPlaceholder.style.display = 'block';
             videoPlaceholder.style.visibility = 'visible';
-            
-            // Reset caption overlay
-            captionOverlay.classList.remove('active');
-            captionOverlay.textContent = '';
-            captionOverlay.className = 'caption-overlay';
-            
-            // Hide style tab
-            styleTabBtn.style.display = 'none';
-            switchTab('captions');
         }
 
 
@@ -2195,17 +2316,18 @@
 
         document.querySelectorAll('.color-grid .color-swatch').forEach(swatch => {
             swatch.addEventListener('click', function() {
-                const parent = this.parentElement;
-                const targetId = parent.getAttribute('data-target');
+                // Find the closest color-grid to get the targetId
+                const grid = this.closest('.color-grid');
+                const targetId = grid.getAttribute('data-target');
                 const hiddenInput = document.getElementById(targetId);
                 
                 if (this.getAttribute('data-is-custom') === 'true') {
                     // Trigger native picker for custom swatch
-                    const picker = parent.querySelector('.hidden-picker');
+                    const picker = this.parentElement.querySelector('.hidden-picker');
                     picker.click();
                 } else {
                     // Update active state
-                    parent.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+                    grid.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
                     this.classList.add('active');
                     
                     // Update value and trigger preview
@@ -2215,20 +2337,68 @@
             });
         });
 
+        document.querySelectorAll('.color-grid .hex-input').forEach(input => {
+            input.addEventListener('change', function() {
+                let val = this.value;
+                if (!val.startsWith('#')) val = '#' + val;
+                
+                // Validate hex
+                if (/^#[0-9A-F]{6}$/i.test(val)) {
+                    const targetId = this.getAttribute('data-target');
+                    const hiddenInput = document.getElementById(targetId);
+                    const parent = this.parentElement;
+                    const customSwatch = parent.querySelector('.color-swatch-custom');
+                    const picker = parent.querySelector('.hidden-picker');
+                    const grid = this.closest('.color-grid');
+                    
+                    // Update value
+                    hiddenInput.value = val;
+                    picker.value = val;
+                    this.value = val.toUpperCase();
+                    customSwatch.style.background = val;
+                    customSwatch.setAttribute('data-value', val);
+                    
+                    // Set as active
+                    grid.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+                    customSwatch.classList.add('active');
+                    
+                    updatePreviewStyle();
+                } else {
+                    // Reset to previous value
+                    const targetId = this.getAttribute('data-target');
+                    this.value = document.getElementById(targetId).value.toUpperCase();
+                }
+            });
+            
+            // Auto-format while typing
+            input.addEventListener('input', function() {
+                if (this.value.length > 0 && !this.value.startsWith('#')) {
+                    this.value = '#' + this.value;
+                }
+                this.value = this.value.toUpperCase();
+            });
+        });
+
         // Custom Picker event handlers
         document.querySelectorAll('.hidden-picker').forEach(picker => {
             picker.addEventListener('input', function() {
                 const parent = this.parentElement;
-                const targetId = parent.getAttribute('data-target');
+                const grid = this.closest('.color-grid');
+                const targetId = grid.getAttribute('data-target');
                 const hiddenInput = document.getElementById(targetId);
                 const customSwatch = parent.querySelector('.color-swatch-custom');
+                const hexInput = parent.querySelector('.hex-input');
                 
                 // Update active state to the custom swatch
-                parent.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+                grid.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
                 customSwatch.classList.add('active');
                 
-                // Update custom swatch visual
+                // Update custom swatch visual and data
                 customSwatch.style.background = this.value;
+                customSwatch.setAttribute('data-value', this.value);
+                
+                // Update hex input
+                if (hexInput) hexInput.value = this.value.toUpperCase();
                 
                 // Update hidden state and preview
                 hiddenInput.value = this.value;
