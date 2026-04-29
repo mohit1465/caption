@@ -1,0 +1,13 @@
+# Vercel Ignore
+uploads/
+output/
+__pycache__/
+.git/
+.venv/
+venv/
+*.pyc
+progress.json
+build.sh
+README.md
+.python-version
+.vercelignore

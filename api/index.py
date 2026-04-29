@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for, jsonify
 import os
 import speech_recognition as sr
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+from moviepy.editor import VideoFileClip, CompositeVideoClip, ColorClip, ImageClip
 import tempfile
 import shutil
 from werkzeug.utils import secure_filename
@@ -10,11 +10,17 @@ import time
 import gc
 import threading
 import uuid
-from faster_whisper import WhisperModel
+# Removed Whisper for Vercel compatibility
 import json
 import multiprocessing
 from proglog import ProgressBarLogger
 import time
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Detect serverless environment - check for Vercel/Lambda env vars only
 IS_SERVERLESS = os.environ.get('VERCEL') == '1' or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
@@ -35,24 +41,22 @@ if 'IMAGEMAGICK_BINARY' not in os.environ:
         # Linux/Serverless - use system ImageMagick
         os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
 
-# Configure FFmpeg for serverless (Vercel/AWS Lambda)
-if IS_SERVERLESS:
-    # Check for common FFmpeg locations
-    ffmpeg_paths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/ffmpeg/ffmpeg', 'ffmpeg']
-    for path in ffmpeg_paths:
-        if os.path.exists(path) or os.system(f'which {path} > /dev/null 2>&1') == 0:
-            os.environ['FFMPEG_BINARY'] = path if os.path.exists(path) else path
-            break
-    # Update MoviePy config
-    try:
-        from moviepy.config import change_settings
-        change_settings({"FFMPEG_BINARY": os.environ.get('FFMPEG_BINARY', 'ffmpeg')})
-        change_settings({"IMAGEMAGICK_BINARY": os.environ.get('IMAGEMAGICK_BINARY', 'convert')})
-    except:
-        pass
+# Configure FFmpeg lazily when needed to avoid startup crashes
+def configure_moviepy():
+    if IS_SERVERLESS:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+            os.environ['FFMPEG_BINARY'] = ffmpeg_path
+            from moviepy.config import change_settings
+            change_settings({"FFMPEG_BINARY": ffmpeg_path})
+            logger.info(f"MoviePy configured with FFmpeg: {ffmpeg_path}")
+        except Exception as e:
+            logger.error(f"MoviePy configuration failed: {e}")
 
 
-app = Flask(__name__)
+# Adjusted for api/ folder structure
+app = Flask(__name__, template_folder='../templates')
 app.secret_key = 'your-secret-key-here'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
@@ -60,22 +64,25 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 def favicon():
     return '', 204
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
+
+# Configure ImageMagick and FFmpeg for MoviePy
 
 # Suppress Werkzeug request logs (stops the INFO:werkzeug GET/POST messages)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# Create necessary directories - use /tmp in serverless environments
+# Define folders globally
 if IS_SERVERLESS:
     UPLOAD_FOLDER = '/tmp/uploads'
     OUTPUT_FOLDER = '/tmp/output'
 else:
     UPLOAD_FOLDER = 'uploads'
     OUTPUT_FOLDER = 'output'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+# Ensure directories exist (wrapped in a function for safety)
+def ensure_directories():
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # Global dictionary to track progress (in-memory only for serverless compatibility)
 progress_tracker = {}
@@ -130,43 +137,43 @@ def extract_audio_from_video(video_path):
         raise
 
 def transcribe_audio_with_timestamps(audio_path):
-    """Transcribe audio to text using Whisper with timestamps"""
+    """Transcribe audio to text using Google Speech API with estimated timestamps"""
     try:
-        logger.info(f"Starting Whisper transcription for: {audio_path}")
+        logger.info(f"Starting transcription for: {audio_path}")
         
-        # Load faster-whisper model
-        model = WhisperModel("base", device="cpu", compute_type="int8")
-        logger.info("Whisper model loaded successfully")
+        # Use Google Speech Recognition for Vercel (Lightweight)
+        # For local, you can still use Whisper if you reinstall it
+        full_text, _ = transcribe_audio_fallback(audio_path)
         
-        # Transcribe with word-level timestamps
-        segments, info = model.transcribe(audio_path, word_timestamps=True)
-        logger.info(f"Whisper transcription completed - language: {info.language}")
-        
-        # Extract word-level timestamps
+        if full_text == "Error transcribing audio" or "service error" in full_text:
+            return full_text, []
+
+        # Generate estimated timestamps for the captions
+        # (Google Free API doesn't provide them, so we spread them evenly)
+        words_list = full_text.split()
         words = []
-        full_text_parts = []
-        for segment in segments:
-            full_text_parts.append(segment.text)
-            if segment.words:
-                for word in segment.words:
-                    words.append({
-                        "text": word.word.strip(),
-                        "start": word.start,
-                        "end": word.end
-                    })
         
-        # Create full text
-        full_text = " ".join(full_text_parts).strip()
-        logger.info(f"Transcription successful: {full_text[:100]}...")
-        logger.info(f"Generated {len(words)} word timestamps")
+        # Get duration for spreading
+        try:
+            video = VideoFileClip(audio_path.replace('_audio.wav', '.mp4')) # Estimate from original
+            duration = video.duration
+            video.close()
+        except:
+            duration = 10 # Default fallback
+            
+        time_per_word = duration / max(len(words_list), 1)
+        for i, w in enumerate(words_list):
+            words.append({
+                "text": w,
+                "start": i * time_per_word,
+                "end": (i + 1) * time_per_word
+            })
         
+        logger.info(f"Transcription successful via Google API: {full_text[:100]}...")
         return full_text, words
-        
     except Exception as e:
-        logger.error(f"Error transcribing audio with Whisper: {str(e)}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        # Fallback to simple speech recognition
-        return transcribe_audio_fallback(audio_path), []
+        logger.error(f"Error transcribing audio: {str(e)}")
+        return "Error transcribing audio", []
 
 def transcribe_audio_fallback(audio_path):
     """Fallback transcribe using speech recognition"""
@@ -218,6 +225,87 @@ def group_words_into_phrases(caption_timestamps, max_words_per_phrase=3):
     
     return phrases
 
+def create_text_clip_pure_python(text, fontsize, color, font_name='Arial', stroke_color=None, stroke_width=0, bg_color=None):
+    """
+    Create a MoviePy ImageClip from text using Pillow (no ImageMagick required).
+    """
+    try:
+        # Resolve font path - Vercel/Linux fallback
+        font_path = None
+        if os.name == 'nt':
+            font_path = font_name # Windows handles name
+        else:
+            # Common Linux font paths
+            possible_fonts = [
+                f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if 'Bold' in font_name else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+                "Arial.ttf" # If bundled
+            ]
+            for p in possible_fonts:
+                if os.path.exists(p):
+                    font_path = p
+                    break
+        
+        try:
+            pil_font = ImageFont.truetype(font_path or "Arial", int(fontsize * 1.5)) # Adjust scale for better resolution
+        except:
+            pil_font = ImageFont.load_default()
+
+        # Handle color mapping for Pillow (MoviePy colors to RGB)
+        def color_to_rgb(c):
+            if isinstance(c, str):
+                if c.startswith('#'): return hex_to_rgb(c)
+                # Simple map
+                cmap = {'white':(255,255,255), 'yellow':(255,255,0), 'black':(0,0,0), 'red':(255,0,0), 'cyan':(0,255,255), 'lime':(0,255,0)}
+                return cmap.get(c.lower(), (255,255,255))
+            return c
+
+        text_rgb = color_to_rgb(color)
+        stroke_rgb = color_to_rgb(stroke_color) if stroke_color else None
+        
+        # Measure text with dummy image
+        dummy_img = Image.new('RGBA', (1, 1))
+        draw = ImageDraw.Draw(dummy_img)
+        bbox = draw.textbbox((0, 0), text, font=pil_font)
+        
+        # Calculate padding and size
+        pad_x, pad_y = 20, 10
+        w = int(bbox[2] - bbox[0] + pad_x * 2 + stroke_width * 2)
+        h = int(bbox[3] - bbox[1] + pad_y * 2 + stroke_width * 2)
+        
+        # Create final image
+        img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # Draw background rectangle
+        if bg_color:
+            bg_rgba = list(color_to_rgb(bg_color))
+            # Handle RGBA if bg_color is tuple (0,0,0,0.8)
+            if isinstance(bg_color, tuple) and len(bg_color) == 4:
+                bg_rgba = (int(bg_color[0]), int(bg_color[1]), int(bg_color[2]), int(bg_color[3]*255))
+            else:
+                bg_rgba = (bg_rgba[0], bg_rgba[1], bg_rgba[2], 200) # Default 0.8 opacity
+            draw.rectangle([0, 0, w, h], fill=bg_rgba)
+
+        # Draw stroke (multiple offsets for thickness)
+        text_pos = (pad_x + stroke_width - bbox[0], pad_y + stroke_width - bbox[1])
+        if stroke_width > 0 and stroke_rgb:
+            for dx in range(-stroke_width, stroke_width + 1):
+                for dy in range(-stroke_width, stroke_width + 1):
+                    draw.text((text_pos[0]+dx, text_pos[1]+dy), text, font=pil_font, fill=stroke_rgb)
+
+        # Draw main text
+        draw.text(text_pos, text, font=pil_font, fill=text_rgb)
+        
+        # Convert to MoviePy ImageClip
+        from moviepy.editor import ImageClip
+        return ImageClip(np.array(img))
+    except Exception as e:
+        logger.error(f"Error in create_text_clip_pure_python: {e}")
+        # Return a very small empty clip as last resort
+        from moviepy.editor import ColorClip
+        return ColorClip(size=(1,1), color=(0,0,0)).set_opacity(0)
+
 def create_caption_preview(video_path, caption_text, job_id):
     """Create a preview image showing where captions will appear"""
     try:
@@ -233,12 +321,13 @@ def create_caption_preview(video_path, caption_text, job_id):
         words = caption_text.split()
         preview_text = f"Words appear at 1s, spread evenly across video"
         
-        txt_clip = TextClip(preview_text, 
-                          fontsize=18,
-                          color='yellow',
-                          font='Arial',
-                          stroke_color='red',
-                          stroke_width=2)
+        txt_clip = create_text_clip_pure_python(
+            preview_text, 
+            fontsize=24,
+            color='yellow',
+            stroke_color='red',
+            stroke_width=2
+        )
         
         # Position text higher from bottom, centered
         txt_clip = txt_clip.set_position(('center', video.h - 100))
@@ -463,26 +552,18 @@ def add_captions_to_video(video_path, caption_text, caption_timestamps, output_p
                     # Clean word and ensure single line
                     clean_word = clean_word.replace('\n', ' ').strip()
                     
-                    txt_clip = TextClip(
+                    txt_clip = create_text_clip_pure_python(
                         clean_word,
                         fontsize=f_size,
                         color=text_color,
-                        font=font_full_name,
+                        font_name=font_full_name,
                         stroke_color=stroke_color if stroke_width > 0 else None,
                         stroke_width=stroke_width if stroke_width > 0 else 0,
-                        method='label',
-                        # Removed size and align=center to let 'label' naturally stay on one line
+                        bg_color=bg_color
                     )
                     
-                    # Add background if specified
-                    if bg_color is not None:
-                        from moviepy.editor import ColorClip
-                        bg_width = txt_clip.w + 20
-                        bg_height = txt_clip.h + 10
-                        bg_clip = ColorClip(size=(bg_width, bg_height), color=bg_color[:3])
-                        bg_clip = bg_clip.set_opacity(bg_color[3] if len(bg_color) > 3 else 0.8)
-                        txt_clip = txt_clip.set_position('center')
-                        txt_clip = CompositeVideoClip([bg_clip, txt_clip], size=(bg_width, bg_height))
+                    # Background is now handled inside create_text_clip_pure_python
+                    pass
                     
                     # Position caption based on style
                     txt_clip = txt_clip.set_position(('center', y_pos))
@@ -541,26 +622,18 @@ def add_captions_to_video(video_path, caption_text, caption_timestamps, output_p
                     # Clean phrase and ensure single line
                     clean_phrase = clean_phrase.replace('\n', ' ').strip()
                     
-                    txt_clip = TextClip(
+                    txt_clip = create_text_clip_pure_python(
                         clean_phrase,
                         fontsize=f_size,
                         color=text_color,
-                        font=font_full_name,
+                        font_name=font_full_name,
                         stroke_color=stroke_color if stroke_width > 0 else None,
                         stroke_width=stroke_width if stroke_width > 0 else 0,
-                        method='label'
+                        bg_color=bg_color
                     )
                     
-                    # Add background if specified
-                    if bg_color is not None:
-                        # Ensure background encompasses the label
-                        from moviepy.editor import ColorClip
-                        bg_width = txt_clip.w + 20
-                        bg_height = txt_clip.h + 10
-                        bg_clip = ColorClip(size=(bg_width, bg_height), color=bg_color[:3])
-                        bg_clip = bg_clip.set_opacity(bg_color[3] if len(bg_color) > 3 else 0.8)
-                        txt_clip = txt_clip.set_position('center')
-                        txt_clip = CompositeVideoClip([bg_clip, txt_clip], size=(bg_width, bg_height))
+                    # Background is now handled inside create_text_clip_pure_python
+                    pass
                     
                     # Position caption based on style
                     txt_clip = txt_clip.set_position(('center', y_pos))
@@ -613,7 +686,7 @@ def add_captions_to_video(video_path, caption_text, caption_timestamps, output_p
                     bitrate='4000k',
                     verbose=False, 
                     logger=web_logger,
-                    threads=multiprocessing.cpu_count(),
+                    threads=1 if IS_SERVERLESS else multiprocessing.cpu_count(),
                     preset='ultrafast',
                     fps=24,
                     audio_fps=44100,
@@ -725,6 +798,8 @@ def process_video_background(job_id, video_path, filename):
 
 @app.route('/')
 def index():
+    ensure_directories()
+    configure_moviepy()
     return render_template('index.html')
 
 @app.route('/progress/<job_id>')
@@ -760,6 +835,7 @@ def upload_file():
         return jsonify({'error': 'No file selected'}), 400
     
     if file and allowed_file(file.filename):
+        ensure_directories()
         filename = secure_filename(file.filename)
         video_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(video_path)
