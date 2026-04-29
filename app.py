@@ -55,19 +55,76 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # Global dictionary to track progress
 progress_tracker = {}
-PROGRESS_FILE = 'progress.json'
 
-def save_progress():
-    """Progress tracking now in-memory only - no local storage"""
-    pass
+def safe_remove_file(file_path):
+    """Safely remove a file with retry mechanism"""
+    if not file_path:
+        return False
+    max_retries = 10
+    for i in range(max_retries):
+        try:
+            if os.path.exists(file_path):
+                # Force garbage collection to release file handles
+                gc.collect()
+                time.sleep(0.5)
+                os.remove(file_path)
+                logger.info(f"Successfully removed file: {file_path}")
+                return True
+            else:
+                return True # File already gone
+        except Exception as e:
+            logger.warning(f"Remove attempt {i+1} failed for {file_path}: {str(e)}")
+            if i < max_retries - 1:
+                time.sleep(1)
+            else:
+                logger.error(f"Could not remove file after {max_retries} attempts: {file_path}")
+                return False
+    return True
 
-def load_progress():
-    """Progress tracking now in-memory only - no local storage"""
-    pass
+def cleanup_job_files(job_id):
+    """Clean up all files associated with a job"""
+    if job_id not in progress_tracker:
+        return
+    
+    data = progress_tracker[job_id]
+    files_to_remove = []
+    
+    # Original video
+    if data.get('video_path'):
+        files_to_remove.append(data.get('video_path'))
+    
+    # Preview image
+    if data.get('preview_filename'):
+        files_to_remove.append(os.path.join(UPLOAD_FOLDER, data.get('preview_filename')))
+    
+    # Output video
+    if data.get('output_filename'):
+        files_to_remove.append(os.path.join(OUTPUT_FOLDER, data.get('output_filename')))
+    
+    for f in files_to_remove:
+        safe_remove_file(f)
+    
+    # Remove from tracker
+    del progress_tracker[job_id]
+    logger.info(f"Cleaned up files and tracker for job {job_id}")
 
-# No local storage - progress is in-memory only
+def clear_all_temp_files():
+    """Clear all files in uploads and output directories"""
+    logger.info("Performing global cleanup of temp files...")
+    for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
+        if os.path.exists(folder):
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logger.error(f'Failed to delete {file_path}. Reason: {e}')
 
-# Resume not supported with in-memory only progress tracking
+# Perform cleanup on startup
+clear_all_temp_files()
 
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv'}
 
@@ -667,7 +724,6 @@ def process_video_background(job_id, video_path, filename):
             'filename': filename,
             'status': 'ready_to_render'
         }
-        save_progress()
         
         # Clean up temporary audio file
         if audio_path:
@@ -716,6 +772,9 @@ def get_progress(job_id):
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    # Perform cleanup of old files before starting a new upload
+    clear_all_temp_files()
+    
     if 'file' not in request.files:
         return jsonify({'error': 'No file selected'}), 400
     
@@ -731,14 +790,13 @@ def upload_file():
         # Generate unique job ID
         job_id = str(uuid.uuid4())
         
-        # Initialize progress tracking with video_path and filename for resume capability
+        # Initialize progress tracking with video_path and filename
         progress_tracker[job_id] = {
             'step': 'Starting...', 
             'progress': 0,
             'video_path': video_path,
             'filename': filename
         }
-        save_progress()
         
         # Start background processing
         thread = threading.Thread(target=process_video_background, args=(job_id, video_path, filename))
@@ -775,7 +833,6 @@ def render_video(job_id):
         def render_background():
             try:
                 progress_tracker[job_id] = {'step': 'Reusing transcription... Applying visual styles', 'progress': 50}
-                save_progress()
                 
                 filename = progress.get('filename')
                 
@@ -806,7 +863,6 @@ def render_video(job_id):
                     'caption_styles': caption_styles
                 }
                 progress_tracker[job_id] = final_progress
-                save_progress()
                 logger.info(f"Render completed successfully for job {job_id}")
                 
             except Exception as e:
@@ -860,12 +916,37 @@ def serve_upload(filename):
 @app.route('/download/<filename>')
 def download_file(filename):
     try:
+        # Find associated job_id
+        job_id = None
+        for jid, data in progress_tracker.items():
+            if data.get('output_filename') == filename:
+                job_id = jid
+                break
+        
         file_path = os.path.join(OUTPUT_FOLDER, filename)
-        if os.path.exists(file_path):
-            return send_file(file_path, as_attachment=True)
-        else:
+        if not os.path.exists(file_path):
             flash('File not found')
             return redirect(url_for('index'))
+
+        def generate():
+            with open(file_path, 'rb') as f:
+                yield from f
+            
+            # After streaming, cleanup everything for this job
+            if job_id:
+                # Small delay to ensure OS releases file handle
+                time.sleep(1)
+                cleanup_job_files(job_id)
+            else:
+                # Fallback: just delete the output file
+                time.sleep(1)
+                safe_remove_file(file_path)
+
+        return app.response_class(
+            generate(),
+            mimetype='video/mp4',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
     except Exception as e:
         logger.error(f"Download error: {str(e)}")
         flash(f'Error downloading file: {str(e)}')
@@ -900,7 +981,6 @@ def re_render_video(job_id):
                     'progress': 50,
                     'status': 're-rendering'
                 }
-                save_progress()
                 
                 logger.info(f"Starting re-render for job {job_id}")
                 logger.info(f"New styles: {new_styles}")
@@ -953,32 +1033,6 @@ def re_render_video(job_id):
         logger.error(f"Error starting re-render: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-def safe_remove_file(file_path):
-    """Safely remove a file with retry mechanism"""
-    max_retries = 10
-    for i in range(max_retries):
-        try:
-            if os.path.exists(file_path):
-                # Try to close any potential file handles
-                try:
-                    # Force garbage collection to release file handles
-                    gc.collect()
-                    time.sleep(0.5)
-                    os.remove(file_path)
-                    logger.info(f"Successfully removed file: {file_path}")
-                    return True
-                except Exception as remove_error:
-                    logger.warning(f"Remove attempt {i+1} failed: {str(remove_error)}")
-                    if i < max_retries - 1:
-                        time.sleep(2)  # Wait longer before retry
-                        continue
-                    else:
-                        logger.error(f"Could not remove file after {max_retries} attempts: {file_path}")
-                        return False
-        except Exception as e:
-            logger.error(f"Error removing file {file_path}: {str(e)}")
-            return False
-    return False
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
